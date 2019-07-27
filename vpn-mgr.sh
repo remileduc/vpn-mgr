@@ -86,6 +86,8 @@ DESCRIPTION
       status
           Show the status of OpenVPN and UFW, and if the
           connection to Internet works.
+          Only this function can be run without root
+          priviledges.
 
       stop
           Stop OpenVPN and remove rules from UFW created
@@ -125,12 +127,12 @@ function show_status()
 {
 	# OpenVPN
 	local tmp
-	tmp="$(service openvpn status | grep 'Active:')"
+	tmp="$(systemctl status openvpn | grep 'Active:')"
 	[[ "$tmp" =~ [[:space:]]*Active:[[:space:]]([[:alpha:]]+) ]]
-	# UFW
 	echo " OpenVPN status: ${BASH_REMATCH[1]}"
-	tmp="$(ufw status | grep 'Status:')"
-	[[ "$tmp" =~ [[:space:]]*Status:[[:space:]]([[:alpha:]]+) ]]
+	# UFW
+	tmp="$(systemctl status ufw.service | grep 'Active:')"
+	[[ "$tmp" =~ [[:space:]]*Active:[[:space:]]([[:alpha:]]+) ]]
 	echo "     UFW status: ${BASH_REMATCH[1]}"
 	# Internet
 	if wget -q --spider -T 2 'http://google.com'; then
@@ -285,7 +287,7 @@ function _download-serverlist()
 # Takes the new server name as a parameter. See https://nordvpn.com/servers/tools/
 #
 # $1 - the new server name. Must be of the form `se203`
-function _select_server
+function _select_server()
 {(
 	# run in a subshell because of `cd`
 	cd /etc/openvpn
@@ -301,14 +303,22 @@ function _select_server
 	echo "server selected: $server.nordvpn.com.udp.ovpn"
 )}
 
+# Internal: Check whether the user has root priviledges.
+#
+# If user doesn't have root priviledges, it calls `exit 100`.
+function _check_root()
+{
+	if [ "$EUID" -ne 0 ]; then
+		echo "Please run as root"
+		exit 100
+	fi
+}
+
 #
 # BEGINNING OF THE SCRIPT
 #
 
-if [ "$EUID" -ne 0 ]; then
-	echo "Please run as root"
-	exit 100
-elif [ -z "${1+x}" ]; then
+if [ -z "${1+x}" ]; then
 	show_help
 	exit -1
 fi
@@ -324,6 +334,7 @@ case "$1" in
 	;;
 	# start OpenVPN and update ufw
 	'start')
+		_check_root
 		if [ -z "${2+x}" ]; then
 			vpn_start ''
 		else
@@ -332,14 +343,17 @@ case "$1" in
 		;;
 	# stop OpenVPN and update ufw
 	'stop')
+		_check_root
 		vpn_stop
 		;;
 	# restart OpenVPN and ufw
 	'restart')
+		_check_root
 		vpn_restart
 		;;
 	# Change VPN server
 	'set')
+		_check_root
 		if [ -z "${2+x}" ]; then
 			show_help
 			exit 2
