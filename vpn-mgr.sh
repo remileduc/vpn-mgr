@@ -54,7 +54,10 @@ function show_help()
 SYNOPSIS
     vpn-mgr.sh help | restart | set SERVER_NAME | start [SERVER_NAME] | status | stop
 
-DESCRIPTION 
+DESCRIPTION
+    Manages your VPN: Can easily start, stop, or change VPN server. Note that
+    when the VPN is enabled, IPV6 is automatically turned off (and turned on
+    again when VPN is stopped).
     To run VPN Manager, you need to give it the action you want to do. Possible
     actions are:
 
@@ -168,6 +171,7 @@ function vpn_start()
 			# add UFW rules
 			_update_ufw 'add'
 			ufw reload
+			_update_ipv6 'delete'
 		else
 			echo "No server have been set yet. Please provide a server name."
 			exit 5
@@ -188,6 +192,7 @@ function vpn_stop()
 	# remove UFW rules
 	_update_ufw 'delete'
 	ufw reload
+	_update_ipv6 'add'
 }
 
 # Public: Restart OpenVPN and reload UFW.
@@ -195,6 +200,7 @@ function vpn_stop()
 # This can be useful when connection to VPN server has been lost.
 function vpn_restart()
 {
+	_update_ipv6 'delete'
 	service openvpn restart
 	ufw reload
 }
@@ -213,6 +219,42 @@ function vpn_set()
 	_select_server "$1"
 	_update_ufw 'add'
 	vpn_restart
+}
+
+# Internal: Start or stop IPV6
+#
+# The first parameter tells if we should enable or disable the IPV6.
+#
+# $1 - possible values: `add` or `delete`, tells if we should allow or forbid
+#      IPV6.
+#
+# Examples
+#
+#    _update_ipv6 'delete'
+function _update_ipv6()
+{
+	if [ -z "${1+x}" ]; then
+		echo 'Missing parameter to function "_update_ipv6"' 1>&2
+		exit 10
+	fi
+
+	local disabled
+	case "$1" in
+		'add')
+			disabled='0'
+			;;
+		'delete')
+			disabled='1'
+			;;
+		*)
+			echo "Wrong parameter to function \"_update_ipv6\": '$1'" 1>&2
+			exit 10
+	esac
+
+	# Update IPV6 status
+	sysctl -w net.ipv6.conf.all.disable_ipv6=$disabled
+	sysctl -w net.ipv6.conf.default.disable_ipv6=$disabled
+	sysctl -w net.ipv6.conf.lo.disable_ipv6=$disabled
 }
 
 # Internal: update UFW rules.
